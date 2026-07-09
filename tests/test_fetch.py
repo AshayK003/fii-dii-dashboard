@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.fetch import parse_fiidii_row, get_fiidii_data, get_nifty_price
+from src.fetch import parse_fiidii_row, get_fiidii_data, get_nifty_history
 
 
 class TestParseFiidiiRow:
@@ -69,20 +69,31 @@ class TestGetFiidiiData:
         assert get_fiidii_data() == []
 
 
-class TestGetNiftyPrice:
+class TestGetNiftyHistory:
 
     @patch("src.fetch.yf")
-    def test_returns_close_price(self, mock_yf):
+    def test_returns_price_dict(self, mock_yf):
         import pandas as pd
-        hist = pd.DataFrame({"Close": [24400.0, 24450.0, 24500.50]})
+        dates = pd.to_datetime(["2026-07-08", "2026-07-09", "2026-07-10"])
+        hist = pd.DataFrame({"Close": [24400.0, 24450.0, 24500.50]}, index=dates)
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = hist
         mock_yf.Ticker.return_value = mock_ticker
-
-        price = get_nifty_price()
-        assert price == 24500.50
+        prices = get_nifty_history("2026-07-08", "2026-07-10")
+        assert prices is not None
+        assert len(prices) == 3
+        assert prices["08-Jul-2026"] == 24400.0
+        assert prices["10-Jul-2026"] == 24500.50
 
     @patch("src.fetch.yf")
     def test_returns_none_on_failure(self, mock_yf):
         mock_yf.Ticker.side_effect = Exception("yfinance error")
-        assert get_nifty_price() is None
+        assert get_nifty_history("2026-07-01", "2026-07-10") is None
+
+    @patch("src.fetch.yf")
+    def test_returns_none_on_empty(self, mock_yf):
+        import pandas as pd
+        mock_ticker = MagicMock()
+        mock_ticker.history.return_value = pd.DataFrame()
+        mock_yf.Ticker.return_value = mock_ticker
+        assert get_nifty_history("2026-07-01", "2026-07-10") is None

@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.config import DB_PATH
 from src.db import init_db, insert_record, query_all, get_today_snapshot
-from src.fetch import get_fiidii_data, get_nifty_price
+from src.fetch import get_fiidii_data, get_nifty_history
 from src.charts import (
     build_trend_chart,
     build_comparison_chart,
@@ -150,13 +150,11 @@ if len(filtered) >= 2:
         st.plotly_chart(fig3, use_container_width=True)
 
     with tab4:
-        with st.spinner("Fetching Nifty data..."):
-            nifty_price = get_nifty_price()
-        nifty_prices = {}
-        for r in filtered:
-            if r["category"] == "FII/FPI":
-                nifty_prices[r["date"]] = nifty_price if nifty_price else None
-        fig4 = build_fii_nifty_overlay(filtered, nifty_prices=nifty_prices if nifty_price else None)
+        nifty_prices = get_nifty_history(
+            start_date.strftime("%Y-%m-%d"),
+            end_date.strftime("%Y-%m-%d"),
+        )
+        fig4 = build_fii_nifty_overlay(filtered, nifty_prices=nifty_prices)
         st.plotly_chart(fig4, use_container_width=True)
 else:
     st.info("Need at least 2 days of data to display charts. Data accumulates daily.")

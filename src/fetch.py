@@ -46,16 +46,17 @@ def get_fiidii_data() -> list[dict]:
         return []
 
 
-def get_nifty_price() -> Optional[float]:
-    """Fetch latest Nifty 50 closing price.
+def get_nifty_history(start_date: str, end_date: str) -> Optional[dict[str, float]]:
+    """Fetch historical Nifty 50 closing prices for a date range.
 
-    Returns None on failure.
+    Returns dict mapping 'DD-Mon-YYYY' → close price, or None on failure.
     """
     try:
         ticker = yf.Ticker(NIFTY_TICKER)
-        hist = ticker.history(period="5d")
+        hist = ticker.history(start=start_date, end=end_date)
         if hist.empty:
             return None
-        return float(hist["Close"].iloc[-1])
+        return {d.strftime("%d-%b-%Y"): float(r["Close"])
+                for d, r in hist.iterrows()}
     except Exception:
         return None
