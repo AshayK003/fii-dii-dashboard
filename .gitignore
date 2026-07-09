@@ -1,6 +1,5 @@
-# Internal engineering memory
+# Internal engineering files — never committed
 internals/
-engineering_memory.md
 
 # Python
 __pycache__/
