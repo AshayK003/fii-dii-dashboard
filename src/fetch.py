@@ -1,0 +1,61 @@
+"""Data fetching module — wraps nsepython and yfinance."""
+
+from typing import Optional
+
+import nsepython as nse
+import yfinance as yf
+
+from src.config import NIFTY_TICKER
+
+
+def parse_fiidii_row(raw: dict) -> Optional[dict]:
+    """Parse a raw nse_fiidii() row into clean types.
+
+    Returns None if the row is empty or malformed.
+    """
+    if not raw or not raw.get("category") or not raw.get("buyValue"):
+        return None
+    try:
+        return {
+            "date": str(raw["date"]),
+            "category": str(raw["category"]),
+            "buy_value": float(raw["buyValue"]),
+            "sell_value": float(raw["sellValue"]),
+            "net_value": float(raw["netValue"]),
+        }
+    except (ValueError, TypeError, KeyError):
+        return None
+
+
+def get_fiidii_data() -> list[dict]:
+    """Fetch current FII/DII data from NSE and return parsed records.
+
+    Returns empty list on failure.
+    """
+    try:
+        raw_rows = nse.nse_fiidii()
+        if not raw_rows:
+            return []
+        parsed = []
+        for row in raw_rows:
+            p = parse_fiidii_row(row)
+            if p:
+                parsed.append(p)
+        return parsed
+    except Exception:
+        return []
+
+
+def get_nifty_price() -> Optional[float]:
+    """Fetch latest Nifty 50 closing price.
+
+    Returns None on failure.
+    """
+    try:
+        ticker = yf.Ticker(NIFTY_TICKER)
+        hist = ticker.history(period="5d")
+        if hist.empty:
+            return None
+        return float(hist["Close"].iloc[-1])
+    except Exception:
+        return None
