@@ -104,8 +104,13 @@ df_all = pd.DataFrame(all_records)
 
 if not df_all.empty:
     df_all["date_parsed"] = pd.to_datetime(df_all["date"], format="%d-%b-%Y", errors="coerce")
-    min_date = df_all["date_parsed"].min().date()
-    max_date = df_all["date_parsed"].max().date()
+    valid_dates = df_all["date_parsed"].dropna()
+    if not valid_dates.empty:
+        min_date = valid_dates.min().date()
+        max_date = valid_dates.max().date()
+    else:
+        min_date = datetime.now().date() - timedelta(days=30)
+        max_date = datetime.now().date()
 else:
     min_date = datetime.now().date() - timedelta(days=30)
     max_date = datetime.now().date()
@@ -125,16 +130,17 @@ with st.sidebar:
     )
     st.divider()
 
-    st.markdown("**Actions**")
-    if st.button(f"{_RF} Refresh data", use_container_width=True):
+    st.markdown(f"**Actions** {_RF}")
+    if st.button("Refresh data", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
 
     if not df_all.empty:
         buf = io.StringIO()
         df_all.to_csv(buf, index=False)
+        st.markdown(f"{_DL}")
         st.download_button(
-            label=f"{_DL} Download CSV",
+            label="Download CSV",
             data=buf.getvalue(),
             file_name=f"fiidii_data_{today_str}.csv",
             mime="text/csv",
@@ -241,16 +247,32 @@ if len(filtered) >= 2:
     t1, t2, t3, t4 = st.tabs(["Net Flow Trend", "FII vs DII", "Rolling Averages", "FII vs Nifty"])
 
     with t1:
-        st.plotly_chart(build_trend_chart(filtered), use_container_width=True, config={"displayModeBar": False})
+        fig = build_trend_chart(filtered)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.markdown('<div class="empty">Plotly unavailable — charts cannot render.</div>', unsafe_allow_html=True)
     with t2:
-        st.plotly_chart(build_comparison_chart(filtered), use_container_width=True, config={"displayModeBar": False})
+        fig = build_comparison_chart(filtered)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.markdown('<div class="empty">Plotly unavailable — charts cannot render.</div>', unsafe_allow_html=True)
     with t3:
         window = st.selectbox("Rolling window", [7, 15, 30], index=0, label_visibility="collapsed")
-        st.plotly_chart(build_rolling_avg_chart(filtered, window=window), use_container_width=True, config={"displayModeBar": False})
+        fig = build_rolling_avg_chart(filtered, window=window)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.markdown('<div class="empty">Plotly unavailable — charts cannot render.</div>', unsafe_allow_html=True)
     with t4:
         with st.spinner("Fetching Nifty prices..."):
             nifty_prices = get_nifty_history(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-        st.plotly_chart(build_fii_nifty_overlay(filtered, nifty_prices=nifty_prices), use_container_width=True, config={"displayModeBar": False})
+        fig = build_fii_nifty_overlay(filtered, nifty_prices=nifty_prices)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.markdown('<div class="empty">Plotly unavailable — charts cannot render.</div>', unsafe_allow_html=True)
 else:
     msg = "Need at least 2 days of data to display charts." if not filtered else (
         f"Only {len(filtered)} record(s) in the selected range. Expand the date range."

@@ -5,10 +5,15 @@ from __future__ import annotations
 from typing import Optional
 
 
-def _records_to_df(records: list[dict]) -> "pd.DataFrame":
-    """Convert DB records to a pivoted DataFrame with dates as index."""
-    import pandas as pd  # lazy — avoids numpy/pandas version conflicts at import time
+def _records_to_df(records: list[dict]):
+    """Convert DB records to a pivoted DataFrame with dates as index.
 
+    Returns None if pandas is unavailable.
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        return None
     if not records:
         return pd.DataFrame()
     df = pd.DataFrame(records)
@@ -16,31 +21,34 @@ def _records_to_df(records: list[dict]) -> "pd.DataFrame":
     return df.sort_values("date_parsed")
 
 
-def _pivot_net(df: "pd.DataFrame") -> "pd.DataFrame":
+def _pivot_net(df):
     """Pivot for net values: columns = categories, index = date."""
     return df.pivot_table(
         index="date_parsed", columns="category", values="net_value", aggfunc="first"
     )
 
 
-def _empty_figure(title: str = "No data available") -> "go.Figure":
-    """Return an empty figure with a title."""
-    import plotly.graph_objects as go  # lazy import
+def _import_go():
+    """Lazy import plotly.graph_objects — returns None on failure."""
+    try:
+        import plotly.graph_objects as go
+        return go
+    except ImportError:
+        return None
 
-    return go.Figure().update_layout(title=title)
 
-
-def build_trend_chart(records: list[dict]) -> "go.Figure":
-    """Build a net FII/DII trend line chart."""
-    import plotly.graph_objects as go  # lazy import
+def build_trend_chart(records: list[dict]):
+    """Build a net FII/DII trend line chart. Returns None if plotly unavailable."""
+    go = _import_go()
+    if go is None:
+        return None
 
     df = _records_to_df(records)
-    if df.empty:
-        return _empty_figure()
+    if df is None or df.empty:
+        return go.Figure().update_layout(title="No data available")
 
     pivoted = _pivot_net(df)
     fig = go.Figure()
-
     colors = {"FII/FPI": "#22C55E", "DII": "#EF4444"}
 
     for category in ["FII/FPI", "DII"]:
@@ -66,13 +74,15 @@ def build_trend_chart(records: list[dict]) -> "go.Figure":
     return fig
 
 
-def build_comparison_chart(records: list[dict]) -> "go.Figure":
-    """Build a grouped bar chart comparing FII vs DII net values."""
-    import plotly.graph_objects as go  # lazy import
+def build_comparison_chart(records: list[dict]):
+    """Build a grouped bar chart comparing FII vs DII net values. Returns None if plotly unavailable."""
+    go = _import_go()
+    if go is None:
+        return None
 
     df = _records_to_df(records)
-    if df.empty:
-        return _empty_figure()
+    if df is None or df.empty:
+        return go.Figure().update_layout(title="No data available")
 
     pivoted = _pivot_net(df)
     fig = go.Figure()
@@ -98,13 +108,15 @@ def build_comparison_chart(records: list[dict]) -> "go.Figure":
     return fig
 
 
-def build_rolling_avg_chart(records: list[dict], window: int = 7) -> "go.Figure":
-    """Build a rolling average chart for FII and DII net flows."""
-    import plotly.graph_objects as go  # lazy import
+def build_rolling_avg_chart(records: list[dict], window: int = 7):
+    """Build a rolling average chart. Returns None if plotly unavailable."""
+    go = _import_go()
+    if go is None:
+        return None
 
     df = _records_to_df(records)
-    if df.empty:
-        return _empty_figure()
+    if df is None or df.empty:
+        return go.Figure().update_layout(title="No data available")
 
     pivoted = _pivot_net(df)
     fig = go.Figure()
@@ -134,18 +146,21 @@ def build_rolling_avg_chart(records: list[dict], window: int = 7) -> "go.Figure"
     return fig
 
 
-def build_fii_nifty_overlay(records: list[dict], nifty_prices: Optional[dict[str, float]] = None) -> "go.Figure":
-    """Dual-axis chart: FII net flow + Nifty closing price."""
-    import plotly.graph_objects as go  # lazy import
-    from plotly.subplots import make_subplots  # lazy import
+def build_fii_nifty_overlay(records: list[dict], nifty_prices: Optional[dict[str, float]] = None):
+    """Dual-axis chart: FII net flow + Nifty closing price. Returns None if plotly unavailable."""
+    go = _import_go()
+    if go is None:
+        return None
+
+    from plotly.subplots import make_subplots
 
     df = _records_to_df(records)
-    if df.empty:
-        return _empty_figure()
+    if df is None or df.empty:
+        return go.Figure().update_layout(title="No data available")
 
     fii_data = df[df["category"] == "FII/FPI"]
     if fii_data.empty:
-        return _empty_figure("No FII data available")
+        return go.Figure().update_layout(title="No FII data available")
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -161,20 +176,23 @@ def build_fii_nifty_overlay(records: list[dict], nifty_prices: Optional[dict[str
     )
 
     if nifty_prices:
-        import pandas as pd  # lazy import
-
-        dates = pd.to_datetime(list(nifty_prices.keys()), format="%d-%b-%Y")
-        prices = list(nifty_prices.values())
-        fig.add_trace(
-            go.Scatter(
-                x=dates,
-                y=prices,
-                mode="lines",
-                name="Nifty 50",
-                line=dict(color="#636363", width=2, dash="dot"),
-            ),
-            secondary_y=True,
-        )
+        try:
+            import pandas as pd
+        except ImportError:
+            pass  # skip Nifty overlay
+        else:
+            dates = pd.to_datetime(list(nifty_prices.keys()), format="%d-%b-%Y")
+            prices = list(nifty_prices.values())
+            fig.add_trace(
+                go.Scatter(
+                    x=dates,
+                    y=prices,
+                    mode="lines",
+                    name="Nifty 50",
+                    line=dict(color="#636363", width=2, dash="dot"),
+                ),
+                secondary_y=True,
+            )
 
     fig.update_layout(
         title="FII Net Flow vs Nifty 50",

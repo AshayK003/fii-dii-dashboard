@@ -82,11 +82,17 @@ def get_today_snapshot(conn: sqlite3.Connection, today: Optional[str] = None) ->
 
 
 def get_monthly_rollup(conn: sqlite3.Connection, year: int, month: int) -> list[dict]:
-    """Aggregate FII/DII data for a given month (month-to-date)."""
+    """Aggregate FII/DII data for a given month (month-to-date).
+
+    Skips records with unparseable dates.
+    """
     records = query_all(conn)
     groups: dict[str, dict] = {}
     for r in records:
-        d = datetime.strptime(r["date"], "%d-%b-%Y")
+        try:
+            d = datetime.strptime(r["date"], "%d-%b-%Y")
+        except (ValueError, TypeError):
+            continue
         if d.year != year or d.month != month:
             continue
         cat = r["category"]
