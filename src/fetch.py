@@ -2,7 +2,6 @@
 
 from typing import Optional
 
-import nsepython as nse
 import yfinance as yf
 
 from src.config import NIFTY_TICKER
@@ -33,6 +32,7 @@ def get_fiidii_data() -> list[dict]:
     Returns empty list on failure.
     """
     try:
+        import nsepython as nse  # lazy import — nsepython's deps may not install cleanly
         raw_rows = nse.nse_fiidii()
         if not raw_rows:
             return []
