@@ -3,4 +3,5 @@ pandas>=2.0
 plotly>=5.18
 nsepython>=2.97
 yfinance>=0.2
+httpx>=0.27
 pytest>=8

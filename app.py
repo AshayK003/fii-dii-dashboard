@@ -1,4 +1,4 @@
-"""NSE FII/DII Data Dashboard — Streamlit app."""
+"""NSE FII/DII Data Dashboard — Track institutional investor flows."""
 
 import io
 from datetime import datetime, timedelta
@@ -17,57 +17,78 @@ from src.charts import (
 )
 from src.ai import generate_summary
 
+# ─── Page config ───────────────────────────────────────────
 st.set_page_config(
-    page_title="FII/DII Data Dashboard",
+    page_title="FII/DII Dashboard",
     page_icon=None,
     layout="centered",
 )
 
-st.title("NSE FII/DII Data Dashboard")
-st.caption("Daily institutional investor flows — FII (Foreign) vs DII (Domestic)")
+# ─── Lucide SVGs (compact, inline) ─────────────────────────
+_II = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>'  # globe
+_IN = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 9 3 15 9 21 9 15 15 9 15Z"/><path d="M9 21V9"/></svg>'  # building
+_CA = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></svg>'  # calendar
+_RF = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M21 21v-5h-5"/></svg>'  # refresh-cw
+_DL = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'  # download
 
-# ─── Custom CSS ────────────────────────────────────────────
+# ─── Custom CSS (minimal, premium) ─────────────────────────
 st.markdown("""<style>
-    .stApp { max-width: 900px; margin: 0 auto; }
+    .stApp { max-width: 960px; margin: 0 auto; }
     div[data-testid="column"] {
-        background: #f8f9fa;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
-        padding: 16px 12px;
-        margin: 4px;
+        padding: 16px 14px;
     }
     div[data-testid="metric-container"] {
-        background: transparent;
-        padding: 0;
+        background: transparent !important;
+        padding: 0 !important;
     }
     div[data-testid="metric-container"] > label {
-        font-size: 0.8rem !important;
-        color: #6b7280 !important;
+        font-size: 0.75rem !important;
+        color: #64748b !important;
+        font-weight: 500 !important;
+    }
+    div[data-testid="metric-container"] > div {
+        font-size: 1.35rem !important;
+        font-weight: 600 !important;
     }
     div[data-testid="stInfo"] {
-        background: #f0f4ff;
-        border: 1px solid #dbeafe;
+        background: #f0f4ff !important;
+        border: 1px solid #dbeafe !important;
+        border-radius: 10px !important;
     }
-    div[data-testid="stInfo"] p {
-        font-size: 0.95rem;
-        line-height: 1.5;
-    }
-    h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
-    div.stCaption { color: #9ca3af; font-size: 0.8rem; }
+    .ml { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 0.78rem; font-weight: 500; }
+    .mc { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }
+    .hdr { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1.05rem; margin: 24px 0 4px; }
+    .empty { text-align: center; padding: 32px 20px; border: 1px dashed #d1d5db; border-radius: 12px; color: #9ca3af; font-size: 0.85rem; }
+    hr { margin: 4px 0 16px; }
+    .stButton button, .stDownloadButton button { border-radius: 8px; font-size: 0.8rem; width: 100%; }
 </style>""", unsafe_allow_html=True)
 
 
-# ─── Init ─────────────────────────────────────────────────
+# ─── Helper ────────────────────────────────────────────────
+def _section(icon_svg: str, label: str):
+    st.markdown(f'<div class="hdr">{icon_svg} {label}</div><hr>', unsafe_allow_html=True)
+
+
+def _metric_card(icon_svg: str, label: str, value: str, delta: str,
+                 caption: str, color: str = "#64748b"):
+    st.markdown(
+        f'<div class="ml" style="color:{color}">{icon_svg} {label}</div>',
+        unsafe_allow_html=True,
+    )
+    st.metric(label=label, value=value, delta=delta, label_visibility="collapsed")
+    st.markdown(f'<div class="mc">{caption}</div>', unsafe_allow_html=True)
+
+
+# ─── Init ──────────────────────────────────────────────────
 conn = init_db(DB_PATH)
 
-
-# ─── Data fetching (lazy-fill) ────────────────────────────
-@st.cache_resource(ttl=3600)
-def get_db_path():
-    return DB_PATH
-
-
+# ─── Lazy-fill data ────────────────────────────────────────
 today_str = datetime.now().strftime("%d-%b-%Y")
 today_snapshot = get_today_snapshot(conn)
+data_fetched = False
 
 if not today_snapshot:
     with st.spinner("Fetching today's FII/DII data from NSE..."):
@@ -76,17 +97,11 @@ if not today_snapshot:
             for r in records:
                 insert_record(conn, r["date"], r["category"],
                               r["buy_value"], r["sell_value"], r["net_value"])
-            st.success(f"Fetched data for {today_str}")
-        else:
-            st.info("Could not fetch today's data (market hours or NSE API). Showing historical data.")
-else:
-    st.caption(f"Latest data: {today_str} (cached)")
-
+            data_fetched = True
 
 all_records = query_all(conn)
 df_all = pd.DataFrame(all_records)
 
-# Parse dates for filtering
 if not df_all.empty:
     df_all["date_parsed"] = pd.to_datetime(df_all["date"], format="%d-%b-%Y", errors="coerce")
     min_date = df_all["date_parsed"].min().date()
@@ -95,132 +110,159 @@ else:
     min_date = datetime.now().date() - timedelta(days=30)
     max_date = datetime.now().date()
 
-
 # ─── Sidebar ──────────────────────────────────────────────
 with st.sidebar:
-    st.header("Controls")
+    st.markdown(f"**FII/DII Dashboard**  \n{_CA} {today_str}")
+    st.divider()
 
+    st.markdown("**Filters**")
     date_range = st.date_input(
         "Date range",
         value=(min_date, max_date),
         min_value=min_date,
         max_value=max_date,
+        label_visibility="collapsed",
     )
+    st.divider()
 
-    if st.button("Refresh today's data"):
+    st.markdown("**Actions**")
+    if st.button(f"{_RF} Refresh data", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
 
-    st.divider()
-    st.subheader("Export")
-
     if not df_all.empty:
-        csv_buffer = io.StringIO()
-        df_all.to_csv(csv_buffer, index=False)
+        buf = io.StringIO()
+        df_all.to_csv(buf, index=False)
         st.download_button(
-            label="Download CSV",
-            data=csv_buffer.getvalue(),
+            label=f"{_DL} Download CSV",
+            data=buf.getvalue(),
             file_name=f"fiidii_data_{today_str}.csv",
             mime="text/csv",
+            use_container_width=True,
         )
-
     st.divider()
-    st.caption("Data source: NSE India via nsepython")
+
+    st.markdown("**About**")
+    st.caption("Data: NSE India via nsepython")
     st.caption("License: AGPL v3")
+    if today_snapshot:
+        st.caption(f"Today's data loaded — {today_str}")
+    elif data_fetched:
+        st.caption(f"Fresh data fetched — {today_str}")
+    else:
+        st.caption("Historical only (no new data)")
+    st.caption(f"Records: {len(all_records)}")
 
-
-# ─── Filter data ──────────────────────────────────────────
+# ─── Filter ────────────────────────────────────────────────
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_date, end_date = date_range
 else:
     start_date, end_date = min_date, max_date
 
-filtered = [r for r in all_records
-            if start_date <= pd.to_datetime(r["date"], format="%d-%b-%Y").date() <= end_date]
+filtered = (
+    [r for r in all_records
+     if start_date <= pd.to_datetime(r["date"], format="%d-%b-%Y").date() <= end_date]
+    if not df_all.empty else []
+)
 
-
-# ─── Current Day Metrics ──────────────────────────────────
-st.header("Today's Snapshot")
+# ─── Today's Snapshot ─────────────────────────────────────
+_section(_II, "Today's Snapshot")
 
 today_data = get_today_snapshot(conn)
 if today_data:
     cols = st.columns(2)
-    for i, record in enumerate(today_data):
+    for i, rec in enumerate(today_data):
         with cols[i]:
-            delta = f"+{record['net_value']:,.0f}" if record['net_value'] >= 0 else f"{record['net_value']:,.0f}"
-            st.metric(
-                label=f"{record['category']} Net (₹ Cr)",
-                value=f"₹{record['net_value']:,.0f}",
+            is_fii = rec["category"] == "FII/FPI"
+            color = "#16a34a" if is_fii else "#dc2626"
+            delta = f"+{rec['net_value']:,.0f}" if rec['net_value'] >= 0 else f"{rec['net_value']:,.0f}"
+            _metric_card(
+                icon_svg=_II if is_fii else _IN,
+                label=rec["category"],
+                value=f"₹{rec['net_value']:,.0f}",
                 delta=delta,
+                caption=f"Buy: ₹{rec['buy_value']:,.0f} | Sell: ₹{rec['sell_value']:,.0f}",
+                color=color,
             )
-            st.caption(f"Buy: ₹{record['buy_value']:,.0f} | Sell: ₹{record['sell_value']:,.0f}")
 
-    # ─── AI Interpretation ─────────────────────────────────
-    fii_row = next((r for r in today_data if r['category'] == 'FII/FPI'), None)
-    dii_row = next((r for r in today_data if r['category'] == 'DII'), None)
-    if fii_row:
-        fii_net = fii_row['net_value']
-        dii_net = dii_row['net_value'] if dii_row else 0.0
-        # Trend detection: how many consecutive FII days in same direction?
-        all_records_recent = query_all(conn)[-10:]
+    fii = next((r for r in today_data if r["category"] == "FII/FPI"), None)
+    dii = next((r for r in today_data if r["category"] == "DII"), None)
+    if fii:
+        recent = query_all(conn)[-10:]
         trend_days = 0
-        for r in reversed(all_records_recent):
-            if r['category'] != 'FII/FPI':
+        for r in reversed(recent):
+            if r["category"] != "FII/FPI":
                 continue
-            if (r['net_value'] >= 0 and fii_net >= 0) or (r['net_value'] < 0 and fii_net < 0):
+            if (r["net_value"] >= 0 and fii["net_value"] >= 0) or (r["net_value"] < 0 and fii["net_value"] < 0):
                 trend_days += 1
             else:
                 break
-        summary = generate_summary(fii_net, dii_net, today_str, trend_days)
+        summary = generate_summary(fii["net_value"], dii["net_value"] if dii else 0.0, today_str, trend_days)
         st.info(summary)
+elif data_fetched:
+    st.info("Today's data fetched but NSE returned nothing yet (market hours).")
 else:
-    st.info("No data for today. Data auto-fetches during market hours.")
+    st.markdown(
+        '<div class="empty"><div style="font-weight:600;margin-bottom:4px">No Data Today</div>'
+        'Use <b>Refresh data</b> in the sidebar during market hours to pull the latest '
+        'FII/DII snapshot from NSE.</div>',
+        unsafe_allow_html=True,
+    )
 
-
-# ─── Monthly Rollup ───────────────────────────────────────
-st.header("Month-to-Date")
+# ─── MTD ──────────────────────────────────────────────────
+_section(_CA, "Month-to-Date")
 now = datetime.now()
 monthly = get_monthly_rollup(conn, now.year, now.month)
 if monthly:
     cols = st.columns(len(monthly))
     for i, row in enumerate(monthly):
         with cols[i]:
+            is_fii = row["category"] == "FII/FPI"
+            color = "#16a34a" if is_fii else "#dc2626"
             delta = f"+{row['net_value']:,.0f}" if row['net_value'] >= 0 else f"{row['net_value']:,.0f}"
-            st.metric(
-                label=f"{row['category']} MTD (₹ Cr)",
+            _metric_card(
+                icon_svg=_II if is_fii else _IN,
+                label=f"{row['category']} MTD",
                 value=f"₹{row['net_value']:,.0f}",
                 delta=delta,
+                caption=f"Buy: ₹{row['buy_value']:,.0f} | Sell: ₹{row['sell_value']:,.0f}",
+                color=color,
             )
-            st.caption(f"Buy: ₹{row['buy_value']:,.0f} | Sell: ₹{row['sell_value']:,.0f}")
+else:
+    st.markdown(
+        '<div class="empty">No monthly data yet. Data accumulates daily.</div>',
+        unsafe_allow_html=True,
+    )
 
-
-# ─── Charts ───────────────────────────────────────────────
-st.header("Historical Trends")
+# ─── Charts ────────────────────────────────────────────────
+_section(_RF, "Historical Trends")
 
 if len(filtered) >= 2:
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Net Flow Trend", "FII vs DII", "Rolling Averages", "FII vs Nifty"
-    ])
+    t1, t2, t3, t4 = st.tabs(["Net Flow Trend", "FII vs DII", "Rolling Averages", "FII vs Nifty"])
 
-    with tab1:
-        fig1 = build_trend_chart(filtered)
-        st.plotly_chart(fig1, use_container_width=True)
-
-    with tab2:
-        fig2 = build_comparison_chart(filtered)
-        st.plotly_chart(fig2, use_container_width=True)
-
-    with tab3:
-        window = st.selectbox("Rolling window", [7, 15, 30], index=0)
-        fig3 = build_rolling_avg_chart(filtered, window=window)
-        st.plotly_chart(fig3, use_container_width=True)
-
-    with tab4:
-        nifty_prices = get_nifty_history(
-            start_date.strftime("%Y-%m-%d"),
-            end_date.strftime("%Y-%m-%d"),
-        )
-        fig4 = build_fii_nifty_overlay(filtered, nifty_prices=nifty_prices)
-        st.plotly_chart(fig4, use_container_width=True)
+    with t1:
+        st.plotly_chart(build_trend_chart(filtered), use_container_width=True, config={"displayModeBar": False})
+    with t2:
+        st.plotly_chart(build_comparison_chart(filtered), use_container_width=True, config={"displayModeBar": False})
+    with t3:
+        window = st.selectbox("Rolling window", [7, 15, 30], index=0, label_visibility="collapsed")
+        st.plotly_chart(build_rolling_avg_chart(filtered, window=window), use_container_width=True, config={"displayModeBar": False})
+    with t4:
+        with st.spinner("Fetching Nifty prices..."):
+            nifty_prices = get_nifty_history(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+        st.plotly_chart(build_fii_nifty_overlay(filtered, nifty_prices=nifty_prices), use_container_width=True, config={"displayModeBar": False})
 else:
-    st.info("Need at least 2 days of data to display charts. Data accumulates daily.")
+    msg = "Need at least 2 days of data to display charts." if not filtered else (
+        f"Only {len(filtered)} record(s) in the selected range. Expand the date range."
+    )
+    st.markdown(f'<div class="empty">{msg}</div>', unsafe_allow_html=True)
+
+# ─── Footer ────────────────────────────────────────────────
+st.markdown(
+    f'<div style="margin-top:32px;padding:12px 0;border-top:1px solid #e2e8f0;'
+    f'font-size:0.7rem;color:#94a3b8;display:flex;justify-content:space-between">'
+    f'<span>FII/DII Dashboard &mdash; {_CA} {today_str}</span>'
+    f'<span>AGPL v3 &middot; '
+    f'<a href="https://github.com/AshayK003/fii-dii-dashboard" style="color:#94a3b8">GitHub</a></span></div>',
+    unsafe_allow_html=True,
+)

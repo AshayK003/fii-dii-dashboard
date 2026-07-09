@@ -5,10 +5,12 @@ Track daily Foreign Institutional Investor (FII) and Domestic Institutional Inve
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.35%2B-red)
 ![License](https://img.shields.io/badge/license-AGPL%20v3-green)
+![UI](https://img.shields.io/badge/ui-premium-22C55E)
 
 ## Features
 
 - **Live FII/DII data** — Auto-fetches daily from NSE India
+- **Premium UI** — Lucide SVG icons, design-token CSS, clean metric cards
 - **Historical persistence** — Every day's data saved to SQLite for trend analysis
 - **4 interactive charts** — Net flow trend, FII vs DII comparison, rolling averages, Nifty overlay
 - **Date range filtering** — Zoom into any period
