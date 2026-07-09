@@ -19,12 +19,41 @@ from src.ai import generate_summary
 
 st.set_page_config(
     page_title="FII/DII Data Dashboard",
-    page_icon="📊",
+    page_icon=None,
     layout="centered",
 )
 
 st.title("NSE FII/DII Data Dashboard")
 st.caption("Daily institutional investor flows — FII (Foreign) vs DII (Domestic)")
+
+# ─── Custom CSS ────────────────────────────────────────────
+st.markdown("""<style>
+    .stApp { max-width: 900px; margin: 0 auto; }
+    div[data-testid="column"] {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 16px 12px;
+        margin: 4px;
+    }
+    div[data-testid="metric-container"] {
+        background: transparent;
+        padding: 0;
+    }
+    div[data-testid="metric-container"] > label {
+        font-size: 0.8rem !important;
+        color: #6b7280 !important;
+    }
+    div[data-testid="stInfo"] {
+        background: #f0f4ff;
+        border: 1px solid #dbeafe;
+    }
+    div[data-testid="stInfo"] p {
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+    h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
+    div.stCaption { color: #9ca3af; font-size: 0.8rem; }
+</style>""", unsafe_allow_html=True)
 
 
 # ─── Init ─────────────────────────────────────────────────
@@ -78,7 +107,7 @@ with st.sidebar:
         max_value=max_date,
     )
 
-    if st.button("🔄 Refresh today's data"):
+    if st.button("Refresh today's data"):
         st.cache_resource.clear()
         st.rerun()
 
@@ -143,7 +172,7 @@ if today_data:
             else:
                 break
         summary = generate_summary(fii_net, dii_net, today_str, trend_days)
-        st.info(f"💡 {summary}")
+        st.info(summary)
 else:
     st.info("No data for today. Data auto-fetches during market hours.")
 
