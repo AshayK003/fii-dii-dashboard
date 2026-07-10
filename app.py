@@ -314,7 +314,7 @@ if filtered:
         try:
             fig, err = build_trend_chart(filtered)
             if fig is not None:
-                st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+                st.altair_chart(fig, use_container_width=True)
             elif err:
                 st.markdown(
                     f'<div class="empty">⚠️ Chart library error: {err}</div>',
@@ -329,7 +329,7 @@ if filtered:
         try:
             fig, err = build_comparison_chart(filtered)
             if fig is not None:
-                st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+                st.altair_chart(fig, use_container_width=True)
             elif err:
                 st.markdown(
                     f'<div class="empty">⚠️ Chart library error: {err}</div>',
@@ -345,7 +345,7 @@ if filtered:
             window = st.selectbox("Rolling window", [7, 15, 30], index=0, label_visibility="collapsed")
             fig, err = build_rolling_avg_chart(filtered, window=window)
             if fig is not None:
-                st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+                st.altair_chart(fig, use_container_width=True)
             elif err:
                 st.markdown(
                     f'<div class="empty">⚠️ Chart library error: {err}</div>',
@@ -367,7 +367,7 @@ if filtered:
                     st.session_state.nifty_cache_key = nifty_cache_key
             fig, err = build_fii_nifty_overlay(filtered, nifty_prices=st.session_state.nifty_prices)
             if fig is not None:
-                st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+                st.altair_chart(fig, use_container_width=True)
             elif err:
                 st.markdown(
                     f'<div class="empty">⚠️ Chart library error: {err}</div>',

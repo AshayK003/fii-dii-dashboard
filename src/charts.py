@@ -1,4 +1,7 @@
-"""Plotly chart builders for the FII/DII dashboard."""
+"""Altair chart builders for the FII/DII dashboard.
+
+Zero extra deps — Altair ships with Streamlit. No pip install needed.
+"""
 
 from __future__ import annotations
 
@@ -7,214 +10,231 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+_ERR_MSG = "No data available for charting"
 
-def _records_to_df(records: list[dict]):
-    """Convert DB records to a pivoted DataFrame with dates as index.
 
-    Returns None if pandas is unavailable.
-    """
+def _prepare_df(records: list[dict]):
+    """Convert DB records to a sorted DataFrame. Returns None if no data."""
     try:
         import pandas as pd
     except ImportError:
         return None
     if not records:
-        return pd.DataFrame()
+        return None
     df = pd.DataFrame(records)
     df["date_parsed"] = pd.to_datetime(df["date"], format="%d-%b-%Y")
     return df.sort_values("date_parsed")
 
 
-def _pivot_net(df):
-    """Pivot for net values: columns = categories, index = date."""
-    return df.pivot_table(
-        index="date_parsed", columns="category", values="net_value", aggfunc="first"
-    )
-
-
-def _import_go():
-    """Lazy import plotly.graph_objects — returns (go|None, error_msg)."""
+def _import_altair():
+    """Lazy import altair — returns (alt|None, error_msg)."""
     try:
-        import plotly.graph_objects as go
-        return go, None
+        import altair as alt
+        return alt, None
     except Exception as e:
-        err = str(e)
-        log.warning("chart import failed: %s", err)
-        # Return the real error so user sees what's actually broken
-        return None, err
+        log.warning("altair import failed: %s", e)
+        return None, str(e)
+
+
+_COLOR_SCALE = {
+    "domain": ["FII/FPI", "DII"],
+    "range": ["#22C55E", "#EF4444"],
+}
+
+_HEIGHT = 400
+
+
+def _base_chart(df, alt):
+    """Shared encoding for date + color + tooltip."""
+    return alt.Chart(df).encode(
+        x=alt.X("date_parsed:T", title="Date"),
+        color=alt.Color("category:N", title=None, scale=alt.Scale(**_COLOR_SCALE)),
+        tooltip=[
+            alt.Tooltip("date_parsed:T", title="Date", format="%d-%b-%Y"),
+            alt.Tooltip("category:N", title="Type"),
+        ],
+    )
 
 
 def build_trend_chart(records: list[dict]):
-    """Build a net FII/DII trend line chart. Returns (Figure|None, error_msg)."""
-    go, err = _import_go()
+    """Line chart: FII vs DII net flow over time.
+
+    Returns (altair.Chart|None, error_msg).
+    """
+    alt, err = _import_altair()
     if err:
         return None, err
-    if go is None:
-        return None, "plotly import returned None"
 
-    df = _records_to_df(records)
+    df = _prepare_df(records)
     if df is None or df.empty:
-        return go.Figure().update_layout(title="No data available"), None
+        return None, _ERR_MSG
 
-    pivoted = _pivot_net(df)
-    fig = go.Figure()
-    colors = {"FII/FPI": "#22C55E", "DII": "#EF4444"}
-
-    for category in ["FII/FPI", "DII"]:
-        if category in pivoted.columns:
-            fig.add_trace(go.Scatter(
-                x=pivoted.index,
-                y=pivoted[category],
-                mode="lines+markers",
-                name=category,
-                line=dict(color=colors.get(category, "#636363"), width=2),
-                hovertemplate="%{y:,.2f}",
-            ))
-
-    fig.update_layout(
-        title="FII/DII Net Flow (₹ Crores)",
-        xaxis_title="Date",
-        yaxis_title="Net Value (₹ Cr)",
-        hovermode="x unified",
-        template="plotly_white",
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-        margin=dict(l=40, r=20, t=40, b=40),
+    chart = (
+        _base_chart(df, alt)
+        .mark_line(point=True, strokeWidth=2)
+        .encode(
+            y=alt.Y("net_value:Q", title="Net Value (₹ Cr)"),
+            tooltip=[
+                alt.Tooltip("date_parsed:T", title="Date", format="%d-%b-%Y"),
+                alt.Tooltip("category:N", title="Type"),
+                alt.Tooltip("net_value:Q", title="Net (₹ Cr)", format=",.2f"),
+            ],
+        )
+        .properties(title="FII/DII Net Flow (₹ Crores)", height=_HEIGHT)
+        .interactive()
     )
-    return fig, None
+    return chart, None
 
 
 def build_comparison_chart(records: list[dict]):
-    """Build a grouped bar chart comparing FII vs DII net values. Returns (Figure|None, error_msg)."""
-    go, err = _import_go()
+    """Bar chart: FII vs DII side-by-side daily comparison.
+
+    Returns (altair.Chart|None, error_msg).
+    """
+    alt, err = _import_altair()
     if err:
         return None, err
-    if go is None:
-        return None, "plotly import returned None"
 
-    df = _records_to_df(records)
+    df = _prepare_df(records)
     if df is None or df.empty:
-        return go.Figure().update_layout(title="No data available"), None
+        return None, _ERR_MSG
 
-    pivoted = _pivot_net(df)
-    fig = go.Figure()
-
-    for category in ["FII/FPI", "DII"]:
-        if category in pivoted.columns:
-            fig.add_trace(go.Bar(
-                x=pivoted.index,
-                y=pivoted[category],
-                name=category,
-                marker_color="#22C55E" if category == "FII/FPI" else "#EF4444",
-            ))
-
-    fig.update_layout(
-        title="FII vs DII Daily Net Comparison",
-        xaxis_title="Date",
-        yaxis_title="Net Value (₹ Cr)",
-        barmode="group",
-        template="plotly_white",
-        hovermode="x unified",
-        margin=dict(l=40, r=20, t=40, b=40),
+    chart = (
+        _base_chart(df, alt)
+        .mark_bar()
+        .encode(
+            x=alt.X("date_parsed:T", title="Date"),
+            y=alt.Y("net_value:Q", title="Net Value (₹ Cr)"),
+            column=alt.Column(
+                "category:N",
+                title=None,
+                header=alt.Header(labelFontSize=12, labelPadding=8),
+            ),
+        )
+        .properties(title="FII vs DII Daily Net Comparison", height=_HEIGHT)
+        .interactive()
     )
-    return fig, None
+    return chart, None
 
 
 def build_rolling_avg_chart(records: list[dict], window: int = 7):
-    """Build a rolling average chart. Returns (Figure|None, error_msg)."""
-    go, err = _import_go()
+    """Line chart: rolling average of FII/DII net flow.
+
+    Returns (altair.Chart|None, error_msg).
+    """
+    alt, err = _import_altair()
     if err:
         return None, err
-    if go is None:
-        return None, "plotly import returned None"
 
-    df = _records_to_df(records)
+    df = _prepare_df(records)
     if df is None or df.empty:
-        return go.Figure().update_layout(title="No data available"), None
+        return None, _ERR_MSG
 
-    pivoted = _pivot_net(df)
-    fig = go.Figure()
-    colors = {"FII/FPI": "#22C55E", "DII": "#EF4444"}
-
-    for category in ["FII/FPI", "DII"]:
-        if category in pivoted.columns and len(pivoted) >= window:
-            rolling = pivoted[category].rolling(window=window, min_periods=1).mean()
-            fig.add_trace(go.Scatter(
-                x=pivoted.index,
-                y=rolling,
-                mode="lines",
-                name=f"{category} ({window}D MA)",
-                line=dict(color=colors.get(category, "#636363"), width=2, dash="dash"),
-                hovertemplate="%{y:,.2f}",
-            ))
-
-    fig.update_layout(
-        title=f"{window}-Day Rolling Average Net Flow (₹ Crores)",
-        xaxis_title="Date",
-        yaxis_title="Net Value (₹ Cr)",
-        hovermode="x unified",
-        template="plotly_white",
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-        margin=dict(l=40, r=20, t=40, b=40),
+    df = df.copy()
+    df["rolling_avg"] = (
+        df.groupby("category")["net_value"]
+        .transform(lambda x: x.rolling(window=window, min_periods=1).mean())
     )
-    return fig, None
+
+    chart = (
+        _base_chart(df, alt)
+        .mark_line(strokeWidth=2, strokeDash=[5, 3])
+        .encode(
+            y=alt.Y("rolling_avg:Q", title=f"{window}D Rolling Avg (₹ Cr)"),
+            tooltip=[
+                alt.Tooltip("date_parsed:T", title="Date", format="%d-%b-%Y"),
+                alt.Tooltip("category:N", title="Type"),
+                alt.Tooltip("rolling_avg:Q", title=f"{window}D Avg (₹ Cr)", format=",.2f"),
+            ],
+        )
+        .properties(
+            title=f"{window}-Day Rolling Average Net Flow (₹ Crores)", height=_HEIGHT
+        )
+        .interactive()
+    )
+    return chart, None
 
 
-def build_fii_nifty_overlay(records: list[dict], nifty_prices: Optional[dict[str, float]] = None):
-    """Dual-axis chart: FII net flow + Nifty closing price. Returns (Figure|None, error_msg)."""
-    go, err = _import_go()
+def build_fii_nifty_overlay(
+    records: list[dict],
+    nifty_prices: Optional[dict[str, float]] = None,
+):
+    """Dual-axis chart: FII net flow + Nifty closing price.
+
+    Returns (altair.Chart|None, error_msg).
+    """
+    alt, err = _import_altair()
     if err:
         return None, err
-    if go is None:
-        return None, "plotly import returned None"
 
-    from plotly.subplots import make_subplots
-
-    df = _records_to_df(records)
+    df = _prepare_df(records)
     if df is None or df.empty:
-        return go.Figure().update_layout(title="No data available"), None
+        return None, _ERR_MSG
 
-    fii_data = df[df["category"] == "FII/FPI"]
-    if fii_data.empty:
-        return go.Figure().update_layout(title="No FII data available"), None
+    fii_df = df[df["category"] == "FII/FPI"]
+    if fii_df.empty:
+        return None, "No FII data available"
 
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig.add_trace(
-        go.Scatter(
-            x=fii_data["date_parsed"],
-            y=fii_data["net_value"],
-            mode="lines+markers",
-            name="FII Net (₹ Cr)",
-            line=dict(color="#22C55E", width=2),
-        ),
-        secondary_y=False,
+    fii_layer = (
+        alt.Chart(fii_df)
+        .mark_line(point=True, strokeWidth=2, color="#22C55E")
+        .encode(
+            x=alt.X("date_parsed:T", title="Date"),
+            y=alt.Y(
+                "net_value:Q",
+                title="FII Net (₹ Cr)",
+                axis=alt.Axis(titleColor="#22C55E", labelColor="#22C55E"),
+            ),
+            tooltip=[
+                alt.Tooltip("date_parsed:T", title="Date", format="%d-%b-%Y"),
+                alt.Tooltip("net_value:Q", title="FII Net (₹ Cr)", format=",.2f"),
+            ],
+        )
     )
 
     if nifty_prices:
         try:
             import pandas as pd
         except ImportError:
-            log.debug("pandas unavailable — skipping Nifty overlay")
+            pass
         else:
-            dates = pd.to_datetime(list(nifty_prices.keys()), format="%d-%b-%Y")
-            prices = list(nifty_prices.values())
-            fig.add_trace(
-                go.Scatter(
-                    x=dates,
-                    y=prices,
-                    mode="lines",
-                    name="Nifty 50",
-                    line=dict(color="#636363", width=2, dash="dot"),
-                ),
-                secondary_y=True,
+            nifty_df = pd.DataFrame(
+                [
+                    {
+                        "date_parsed": pd.to_datetime(d, format="%d-%b-%Y"),
+                        "nifty_close": p,
+                    }
+                    for d, p in (nifty_prices or {}).items()
+                ]
             )
+            if not nifty_df.empty:
+                nifty_layer = (
+                    alt.Chart(nifty_df)
+                    .mark_line(strokeWidth=2, color="#636363", strokeDash=[3, 3])
+                    .encode(
+                        x=alt.X("date_parsed:T"),
+                        y=alt.Y(
+                            "nifty_close:Q",
+                            title="Nifty 50",
+                            axis=alt.Axis(titleColor="#636363", labelColor="#636363"),
+                        ),
+                        tooltip=[
+                            alt.Tooltip("date_parsed:T", title="Date", format="%d-%b-%Y"),
+                            alt.Tooltip("nifty_close:Q", title="Nifty 50", format=",.2f"),
+                        ],
+                    )
+                )
 
-    fig.update_layout(
-        title="FII Net Flow vs Nifty 50",
-        template="plotly_white",
-        hovermode="x unified",
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-        margin=dict(l=40, r=20, t=40, b=40),
-    )
-    fig.update_yaxes(title_text="FII Net (₹ Cr)", secondary_y=False)
-    fig.update_yaxes(title_text="Nifty 50", secondary_y=True)
-    return fig, None
+                combined = (
+                    alt.layer(fii_layer, nifty_layer)
+                    .resolve_scale(y="independent")
+                    .properties(title="FII Net Flow vs Nifty 50", height=_HEIGHT)
+                    .interactive()
+                )
+                return combined, None
+
+    chart = fii_layer.properties(
+        title="FII Net Flow vs Nifty 50 (Nifty data unavailable)",
+        height=_HEIGHT,
+    ).interactive()
+    return chart, None
