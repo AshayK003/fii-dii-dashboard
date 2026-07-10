@@ -43,15 +43,15 @@ def _import_go():
         if "No module named 'plotly'" in err:
             try:
                 import subprocess, sys
+                log.info("attempting plotly auto-install via %s", sys.executable)
                 subprocess.check_call(
                     [sys.executable, "-m", "pip", "install", "plotly>=5.18", "--quiet"]
                 )
                 import plotly.graph_objects as go
                 return go, None
             except Exception as install_exc:
-                log.warning("plotly auto-install failed: %s", install_exc)
-                pass
-        return None, err
+                log.error("plotly auto-install failed: %s — add plotly to requirements.txt", install_exc)
+        return None, f"{err} (install plotly: pip install plotly)"
 
 
 def build_trend_chart(records: list[dict]):
