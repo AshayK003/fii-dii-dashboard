@@ -208,9 +208,9 @@ def _render_flow_cards(groups: dict, prefix: str = ""):
             _metric_card(
                 icon_svg=_II if is_fii else _IN,
                 label=f"{cat}{prefix}",
-                value=f"₹{vals['net_value']:,.0f}",
-                delta=f"{sign}{vals['net_value']:,.0f}",
-                caption=f"Buy: ₹{vals['buy_value']:,.0f} | Sell: ₹{vals['sell_value']:,.0f}",
+                value=f"₹{vals['net_value']:,.0f} Cr",
+                delta=f"{sign}{vals['net_value']:,.0f} Cr",
+                caption=f"Buy: ₹{vals['buy_value']:,.0f} Cr | Sell: ₹{vals['sell_value']:,.0f} Cr",
                 color=color,
             )
 
@@ -241,7 +241,7 @@ if not _is_single_day and filtered:
         for d in dates:
             day_records = [r for r in filtered if r["date"] == d]
             day_groups = _range_aggregate(day_records)
-            summary = ", ".join(f"{k}: ₹{v['net_value']:,.0f}" for k, v in day_groups.items())
+            summary = ", ".join(f"{k}: ₹{v['net_value']:,.0f} Cr" for k, v in day_groups.items())
             with st.expander(f"**{d}** — {summary}", expanded=False):
                 _render_flow_cards(day_groups)
     except Exception:
