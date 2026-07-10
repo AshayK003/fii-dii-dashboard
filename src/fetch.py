@@ -65,3 +65,52 @@ def get_nifty_history(start_date: str, end_date: str) -> Optional[dict[str, floa
                 for d, r in hist.iterrows()}
     except Exception:
         return None
+
+
+def generate_sample_data(days: int = 30) -> list[dict]:
+    """Generate realistic-looking mock FII/DII data for the past N trading days.
+
+    Skips weekends. Returns list of records ready for insert_record().
+    """
+    import random
+    from datetime import date, timedelta
+
+    random.seed(42)
+    records = []
+    today = date.today()
+
+    # Base parameters — seeded for reproducibility
+    fii_base_buy = 16000.0
+    fii_base_sell = 15500.0
+    dii_base_buy = 14000.0
+    dii_base_sell = 13500.0
+
+    for offset in range(days, 0, -1):
+        d = today - timedelta(days=offset)
+        if d.weekday() >= 5:  # skip Sat/Sun
+            continue
+
+        date_str = d.strftime("%d-%b-%Y")
+
+        # FII: mostly selling with some buying days
+        fii_drift = random.uniform(-2000, 1800)
+        fii_net = fii_base_buy - fii_base_sell + fii_drift
+        fii_buy = fii_base_buy + random.uniform(-800, 800)
+        fii_sell = fii_buy - fii_net
+
+        # DII: tends to counterbalance FII
+        dii_drift = random.uniform(-1200, 1200)
+        dii_net = -fii_net * random.uniform(-0.4, 0.6) + dii_drift
+        dii_buy = dii_base_buy + random.uniform(-600, 600)
+        dii_sell = dii_buy - dii_net
+
+        records.append({"date": date_str, "category": "FII/FPI",
+                        "buy_value": round(fii_buy, 2),
+                        "sell_value": round(fii_sell, 2),
+                        "net_value": round(fii_net, 2)})
+        records.append({"date": date_str, "category": "DII",
+                        "buy_value": round(dii_buy, 2),
+                        "sell_value": round(dii_sell, 2),
+                        "net_value": round(dii_net, 2)})
+
+    return records

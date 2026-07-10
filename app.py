@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.config import DB_PATH
 from src.db import init_db, insert_record, query_all, get_today_snapshot, get_monthly_rollup
-from src.fetch import get_fiidii_data, get_nifty_history
+from src.fetch import get_fiidii_data, get_nifty_history, generate_sample_data
 from src.charts import (
     build_trend_chart,
     build_comparison_chart,
@@ -110,17 +110,27 @@ with st.sidebar:
     date_range = st.date_input(
         "Date range",
         value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
+        min_value=datetime.now().date() - timedelta(days=60),
+        max_value=datetime.now().date(),
         label_visibility="collapsed",
     )
     st.divider()
 
     st.markdown(f"**Actions** {_RF}", unsafe_allow_html=True)
     if st.button("Refresh data", use_container_width=True):
-        st.session_state.nifty_prices = None  # invalidate cache
+        st.session_state.nifty_prices = None
         st.cache_resource.clear()
         st.rerun()
+
+    if st.button("Load sample data (30d)", use_container_width=True):
+        sample = generate_sample_data(30)
+        conn.execute("DELETE FROM fii_dii_data")
+        for r in sample:
+            insert_record(conn, r["date"], r["category"],
+                          r["buy_value"], r["sell_value"], r["net_value"])
+        st.session_state.nifty_prices = None
+        st.rerun()
+    st.caption("Replaces existing data with 30 days of mock FII/DII data.")
 
     if not df_all.empty:
         buf = io.StringIO()
