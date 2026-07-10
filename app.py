@@ -33,7 +33,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ─── Lucide SVGs (compact, inline) ─────────────────────────
+# ─── Lucide SVGs ───────────────────────────────────────────
 _II = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>'
 _IN = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 9 3 15 9 21 9 15 15 9 15Z"/><path d="M9 21V9"/></svg>'
 _CA = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></svg>'
@@ -76,6 +76,8 @@ if "nifty_prices" not in st.session_state:
     st.session_state.nifty_prices = None
 if "data_fetched" not in st.session_state:
     st.session_state.data_fetched = False
+if "seeded_sample" not in st.session_state:
+    st.session_state.seeded_sample = False
 
 # ─── Lazy-fill data ────────────────────────────────────────
 today_snapshot = get_today_snapshot(conn)
@@ -89,6 +91,17 @@ if not today_snapshot:
             st.session_state.data_fetched = True
 
 all_records = query_all(conn)
+
+# ─── Auto-seed sample data when DB is too thin ─────────────
+_unique_dates = len(set(r["date"] for r in all_records))
+if _unique_dates < 3 and not today_snapshot and not st.session_state.data_fetched:
+    sample = generate_sample_data(30)
+    for r in sample:
+        insert_record(conn, r["date"], r["category"],
+                      r["buy_value"], r["sell_value"], r["net_value"])
+    all_records = query_all(conn)
+    st.session_state.seeded_sample = True
+
 df_all = pd.DataFrame(all_records) if all_records else pd.DataFrame()
 
 # ─── Date range bounds ─────────────────────────────────────
@@ -130,7 +143,7 @@ with st.sidebar:
                           r["buy_value"], r["sell_value"], r["net_value"])
         st.session_state.nifty_prices = None
         st.rerun()
-    st.caption("Replaces existing data with 30 days of mock FII/DII data.")
+    st.caption("Replaces existing data with 30 days of mock data.")
 
     if not df_all.empty:
         buf = io.StringIO()
@@ -152,6 +165,8 @@ with st.sidebar:
         st.caption(f"Today's data loaded — {today_str}")
     elif st.session_state.data_fetched:
         st.caption(f"Fresh data fetched — {today_str}")
+    elif st.session_state.seeded_sample:
+        st.caption("Sample data — click Refresh for live NSE data")
     else:
         st.caption("Historical only (no new data)")
     st.caption(f"Records: {len(all_records)}")
@@ -168,72 +183,78 @@ filtered = (
     if not df_all.empty else []
 )
 
-# ─── Section 1: Today's Snapshot ───────────────────────────
-_section(_II, "Today's Snapshot")
-try:
-    today_data = get_today_snapshot(conn)
-    if today_data:
-        cols = st.columns(2)
-        for i, rec in enumerate(today_data):
-            with cols[i]:
-                is_fii = rec["category"] == "FII/FPI"
-                color = "#16a34a" if is_fii else "#dc2626"
-                sign = "+" if rec["net_value"] >= 0 else ""
-                _metric_card(
-                    icon_svg=_II if is_fii else _IN,
-                    label=rec["category"],
-                    value=f"₹{rec['net_value']:,.0f}",
-                    delta=f"{sign}{rec['net_value']:,.0f}",
-                    caption=f"Buy: ₹{rec['buy_value']:,.0f} | Sell: ₹{rec['sell_value']:,.0f}",
-                    color=color,
-                )
+# ─── Aggregate helpers ─────────────────────────────────────
+def _range_aggregate(records: list[dict]) -> dict:
+    """Aggregate filtered records into per-category totals."""
+    groups: dict[str, dict] = {}
+    for r in records:
+        cat = r["category"]
+        if cat not in groups:
+            groups[cat] = {"buy_value": 0.0, "sell_value": 0.0, "net_value": 0.0}
+        groups[cat]["buy_value"] += r["buy_value"]
+        groups[cat]["sell_value"] += r["sell_value"]
+        groups[cat]["net_value"] += r["net_value"]
+    return groups
 
-        fii = next((r for r in today_data if r["category"] == "FII/FPI"), None)
-        dii = next((r for r in today_data if r["category"] == "DII"), None)
-        if fii:
-            recent = query_all(conn)[-10:]
-            trend_days = 0
-            for r in reversed(recent):
-                if r["category"] != "FII/FPI":
-                    continue
-                if (r["net_value"] >= 0 and fii["net_value"] >= 0) or (r["net_value"] < 0 and fii["net_value"] < 0):
-                    trend_days += 1
-                else:
-                    break
-            summary = generate_summary(fii["net_value"], dii["net_value"] if dii else 0.0, today_str, trend_days)
-            st.info(summary)
-    elif st.session_state.data_fetched:
-        st.info("Today's data fetched but NSE returned nothing yet (market hours).")
+
+def _render_flow_cards(groups: dict, prefix: str = ""):
+    """Render FII + DII metric cards from an aggregated group dict."""
+    cols = st.columns(len(groups))
+    for i, (cat, vals) in enumerate(sorted(groups.items())):
+        with cols[i]:
+            is_fii = cat == "FII/FPI"
+            color = "#16a34a" if is_fii else "#dc2626"
+            sign = "+" if vals["net_value"] >= 0 else ""
+            _metric_card(
+                icon_svg=_II if is_fii else _IN,
+                label=f"{cat}{prefix}",
+                value=f"₹{vals['net_value']:,.0f}",
+                delta=f"{sign}{vals['net_value']:,.0f}",
+                caption=f"Buy: ₹{vals['buy_value']:,.0f} | Sell: ₹{vals['sell_value']:,.0f}",
+                color=color,
+            )
+
+
+_is_single_day = start_date == end_date
+_range_label = start_date.strftime("%d-%b-%Y") if _is_single_day else f"{start_date.strftime('%d-%b')} – {end_date.strftime('%d-%b-%Y')}"
+
+# ─── Section 1: Date Range Summary ─────────────────────────
+_section(_II, _range_label)
+try:
+    if filtered:
+        groups = _range_aggregate(filtered)
+        _render_flow_cards(groups)
     else:
         st.markdown(
-            '<div class="empty"><div style="font-weight:600;margin-bottom:4px">No Data Today</div>'
-            'Use <b>Refresh data</b> in the sidebar during market hours to pull the latest '
-            'FII/DII snapshot from NSE.</div>',
+            '<div class="empty">No data for this date range. Adjust the filter or load sample data.</div>',
             unsafe_allow_html=True,
         )
 except Exception:
-    _error_placeholder("today's snapshot")
+    _error_placeholder("range summary")
 
-# ─── Section 2: Month-to-Date ──────────────────────────────
+# ─── Section 2: Per-day breakdown (when range > 1 day) ─────
+if not _is_single_day and filtered:
+    _section(_CA, "Daily Cash Flow")
+    try:
+        # Group by date, show per-day FII/DII data in a compact table
+        dates = sorted(set(r["date"] for r in filtered), reverse=True)
+        for d in dates:
+            day_records = [r for r in filtered if r["date"] == d]
+            day_groups = _range_aggregate(day_records)
+            summary = ", ".join(f"{k}: ₹{v['net_value']:,.0f}" for k, v in day_groups.items())
+            with st.expander(f"**{d}** — {summary}", expanded=False):
+                _render_flow_cards(day_groups)
+    except Exception:
+        _error_placeholder("daily breakdown")
+
+# ─── Section 3: Month-to-Date ──────────────────────────────
 _section(_CA, "Month-to-Date")
 try:
     now = datetime.now()
     monthly = get_monthly_rollup(conn, now.year, now.month)
     if monthly:
-        cols = st.columns(len(monthly))
-        for i, row in enumerate(monthly):
-            with cols[i]:
-                is_fii = row["category"] == "FII/FPI"
-                color = "#16a34a" if is_fii else "#dc2626"
-                sign = "+" if row["net_value"] >= 0 else ""
-                _metric_card(
-                    icon_svg=_II if is_fii else _IN,
-                    label=f"{row['category']} MTD",
-                    value=f"₹{row['net_value']:,.0f}",
-                    delta=f"{sign}{row['net_value']:,.0f}",
-                    caption=f"Buy: ₹{row['buy_value']:,.0f} | Sell: ₹{row['sell_value']:,.0f}",
-                    color=color,
-                )
+        monthly_groups = {r["category"]: r for r in monthly}
+        _render_flow_cards(monthly_groups)
     else:
         st.markdown(
             '<div class="empty">No monthly data yet. Data accumulates daily.</div>',
@@ -242,7 +263,7 @@ try:
 except Exception:
     _error_placeholder("monthly data")
 
-# ─── Section 3: Charts ─────────────────────────────────────
+# ─── Section 4: Charts ─────────────────────────────────────
 _section(_RF, "Historical Trends")
 
 if len(filtered) >= 2:
@@ -272,7 +293,6 @@ if len(filtered) >= 2:
             _error_placeholder("rolling average chart")
     with t4:
         try:
-            # Cache Nifty prices in session state
             if st.session_state.nifty_prices is None:
                 with st.spinner("Fetching Nifty prices..."):
                     st.session_state.nifty_prices = get_nifty_history(
@@ -284,17 +304,19 @@ if len(filtered) >= 2:
         except Exception:
             _error_placeholder("Nifty overlay chart")
 else:
-    msg = "Need at least 2 days of data to display charts." if not filtered else (
-        f"Only {len(filtered)} record(s) in the selected range. Expand the date range."
-    )
-    st.markdown(f'<div class="empty">{msg}</div>', unsafe_allow_html=True)
+    if not filtered:
+        st.markdown('<div class="empty">No data — adjust the date range.</div>', unsafe_allow_html=True)
+    elif len(filtered) == 1:
+        # Single record is just one category for a day — show anyway
+        st.markdown('<div class="empty">Only one data point. Load sample data for more.</div>', unsafe_allow_html=True)
 
 # ─── Footer ────────────────────────────────────────────────
 st.markdown(
     f'<div style="margin-top:32px;padding:12px 0;border-top:1px solid #e2e8f0;'
     f'font-size:0.7rem;color:#94a3b8;display:flex;justify-content:space-between">'
     f'<span>FII/DII Dashboard &mdash; {_CA} {today_str}</span>'
-    f'<span>AGPL v3 &middot; '
+    f'<span>{"Sample mode · " if st.session_state.seeded_sample else ""}'
+    f'AGPL v3 &middot; '
     f'<a href="https://github.com/AshayK003/fii-dii-dashboard" style="color:#94a3b8">GitHub</a></span></div>',
     unsafe_allow_html=True,
 )
