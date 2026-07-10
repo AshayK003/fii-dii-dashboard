@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from src.config import DB_PATH
-from src.db import init_db, insert_record, query_all, get_today_snapshot, get_monthly_rollup
+from src.db import init_db, insert_record, query_all, get_today_snapshot, get_monthly_rollup, has_mock_data
 from src.fetch import get_fiidii_data, get_nifty_history, generate_sample_data
 from src.charts import (
     build_trend_chart,
