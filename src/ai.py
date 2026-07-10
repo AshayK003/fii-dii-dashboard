@@ -4,9 +4,12 @@ Generates a plain-language interpretation of institutional flows
 using Groq API, with a deterministic rule-based fallback.
 """
 
+import logging
 import os
 from typing import Optional
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -16,7 +19,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 def _format_number(value: float) -> str:
     """Format a crore figure for display."""
-    prefix = "−" if value < 0 else ""
+    prefix = "-" if value < 0 else ""
     return f"{prefix}₹{abs(value):,.0f} Cr"
 
 
@@ -93,7 +96,8 @@ def _llm_summary(fii_net: float, dii_net: float, today_str: str) -> Optional[str
         content = data["choices"][0]["message"]["content"].strip()
         # Strip quotes if LLM wraps the response
         return content.strip('"\'')
-    except Exception:
+    except Exception as exc:
+        log.warning("Groq API call failed: %s", exc)
         return None
 
 

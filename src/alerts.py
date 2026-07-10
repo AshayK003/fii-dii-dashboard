@@ -4,9 +4,12 @@ Checks if FII net crosses a configured threshold and
 produces a formatted message ready for delivery.
 """
 
+import logging
 import os
 from datetime import datetime
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -14,7 +17,7 @@ DEFAULT_THRESHOLD_CR = 1000.0
 
 
 def _format_cr(value: float) -> str:
-    prefix = "−" if value < 0 else "+"
+    prefix = "-" if value < 0 else "+"
     return f"{prefix}₹{abs(value):,.0f} Cr"
 
 
@@ -89,5 +92,6 @@ def send_alert(message: str) -> bool:
             })
         resp.raise_for_status()
         return True
-    except Exception:
+    except Exception as exc:
+        log.warning("Telegram send failed: %s", exc)
         return False

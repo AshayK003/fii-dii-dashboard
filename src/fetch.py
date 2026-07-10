@@ -1,8 +1,11 @@
 """Data fetching module — wraps nsepython and yfinance."""
 
+import logging
 from typing import Optional
 
 from src.config import NIFTY_TICKER
+
+log = logging.getLogger(__name__)
 
 
 def parse_fiidii_row(raw: dict) -> Optional[dict]:
@@ -10,7 +13,7 @@ def parse_fiidii_row(raw: dict) -> Optional[dict]:
 
     Returns None if the row is empty or malformed.
     """
-    if not raw or not raw.get("category") or not raw.get("buyValue"):
+    if not raw or not raw.get("category") or raw.get("buyValue") is None:
         return None
     try:
         return {
@@ -43,7 +46,8 @@ def get_fiidii_data() -> list[dict]:
                 if p:
                     parsed.append(p)
             return parsed
-        except Exception:
+        except Exception as exc:
+            log.warning("nsepython attempt %d failed: %s", attempt + 1, exc)
             if attempt < 2:
                 time.sleep(2)
                 continue
@@ -63,7 +67,8 @@ def get_nifty_history(start_date: str, end_date: str) -> Optional[dict[str, floa
             return None
         return {d.strftime("%d-%b-%Y"): float(r["Close"])
                 for d, r in hist.iterrows()}
-    except Exception:
+    except Exception as exc:
+        log.warning("yfinance fetch failed for %s–%s: %s", start_date, end_date, exc)
         return None
 
 

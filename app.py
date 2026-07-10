@@ -1,10 +1,14 @@
 """NSE FII/DII Data Dashboard — Track institutional investor flows."""
 
+import html
 import io
+import logging
 from datetime import datetime, timedelta
 
 import pandas as pd
 import streamlit as st
+
+log = logging.getLogger(__name__)
 
 from src.config import DB_PATH
 from src.db import init_db, insert_record, query_all, get_today_snapshot, get_monthly_rollup, has_mock_data
@@ -46,7 +50,7 @@ render_css()
 
 # ─── Helpers ───────────────────────────────────────────────
 def _section(icon_svg: str, label: str):
-    st.markdown(f'<div class="hdr">{icon_svg} {label}</div><hr>', unsafe_allow_html=True)
+    st.markdown(f'<div class="hdr">{icon_svg} {html.escape(label)}</div><hr>', unsafe_allow_html=True)
 
 
 def _metric_card(icon_svg: str, label: str, value: str, delta: str,
@@ -241,12 +245,29 @@ try:
     if filtered:
         groups = _range_aggregate(filtered)
         _render_flow_cards(groups)
+
+        # AI Summary — inside try so `groups` is guaranteed to exist
+        _fii_records = [r for r in filtered if r["category"] == "FII/FPI"]
+        _fii_records.sort(key=lambda r: r["date"], reverse=True)
+        _trend_days = 0
+        if _fii_records:
+            _sign = 1 if _fii_records[0]["net_value"] >= 0 else -1
+            for _r in _fii_records:
+                if (_r["net_value"] >= 0 and _sign > 0) or (_r["net_value"] < 0 and _sign < 0):
+                    _trend_days += 1
+                else:
+                    break
+        _fii_net = groups.get("FII/FPI", {}).get("net_value", 0)
+        _dii_net = groups.get("DII", {}).get("net_value", 0)
+        _summary = generate_summary(_fii_net, _dii_net, trend_days=_trend_days)
+        st.info(_summary)
     else:
         st.markdown(
             '<div class="empty">No data for this date range. Adjust the filter or load sample data.</div>',
             unsafe_allow_html=True,
         )
-except Exception:
+except Exception as exc:
+    log.warning("range summary render failed: %s", exc)
     _error_placeholder("range summary")
 
 # ─── Section 2: Per-day breakdown (when range > 1 day) ─────
@@ -261,7 +282,8 @@ if not _is_single_day and filtered:
             summary = ", ".join(f"{k}: ₹{v['net_value']:,.0f} Cr" for k, v in day_groups.items())
             with st.expander(f"**{d}** — {summary}", expanded=False):
                 _render_flow_cards(day_groups)
-    except Exception:
+    except Exception as exc:
+        log.warning("daily breakdown render failed: %s", exc)
         _error_placeholder("daily breakdown")
 
 # ─── Section 3: Month-to-Date ──────────────────────────────
@@ -277,7 +299,8 @@ try:
             '<div class="empty">No monthly data yet. Data accumulates daily.</div>',
             unsafe_allow_html=True,
         )
-except Exception:
+except Exception as exc:
+    log.warning("monthly data render failed: %s", exc)
     _error_placeholder("monthly data")
 
 # ─── Section 4: Charts ─────────────────────────────────────
@@ -299,7 +322,8 @@ if filtered:
                 )
             else:
                 _chart_unavailable()
-        except Exception:
+        except Exception as exc:
+            log.warning("trend chart render failed: %s", exc)
             _error_placeholder("trend chart")
     with t2:
         try:
@@ -313,7 +337,8 @@ if filtered:
                 )
             else:
                 _chart_unavailable()
-        except Exception:
+        except Exception as exc:
+            log.warning("comparison chart render failed: %s", exc)
             _error_placeholder("comparison chart")
     with t3:
         try:
@@ -328,15 +353,18 @@ if filtered:
                 )
             else:
                 _chart_unavailable()
-        except Exception:
+        except Exception as exc:
+            log.warning("rolling average chart render failed: %s", exc)
             _error_placeholder("rolling average chart")
     with t4:
         try:
-            if st.session_state.nifty_prices is None:
+            nifty_cache_key = (start_date.isoformat(), end_date.isoformat())
+            if st.session_state.nifty_prices is None or st.session_state.get("nifty_cache_key") != nifty_cache_key:
                 with st.spinner("Fetching Nifty prices..."):
                     st.session_state.nifty_prices = get_nifty_history(
                         start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
                     )
+                    st.session_state.nifty_cache_key = nifty_cache_key
             fig, err = build_fii_nifty_overlay(filtered, nifty_prices=st.session_state.nifty_prices)
             if fig is not None:
                 st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
@@ -347,7 +375,8 @@ if filtered:
                 )
             else:
                 _chart_unavailable()
-        except Exception:
+        except Exception as exc:
+            log.warning("Nifty overlay chart render failed: %s", exc)
             _error_placeholder("Nifty overlay chart")
 
 # ─── Footer ────────────────────────────────────────────────

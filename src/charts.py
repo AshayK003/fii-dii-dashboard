@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 def _records_to_df(records: list[dict]):
@@ -35,6 +38,7 @@ def _import_go():
         return go, None
     except Exception as e:
         err = str(e)
+        log.warning("plotly import failed: %s", err)
         # One-shot auto-install for Streamlit Cloud where pip may not run on deploy
         if "No module named 'plotly'" in err:
             try:
@@ -44,7 +48,8 @@ def _import_go():
                 )
                 import plotly.graph_objects as go
                 return go, None
-            except Exception:
+            except Exception as install_exc:
+                log.warning("plotly auto-install failed: %s", install_exc)
                 pass
         return None, err
 
@@ -199,7 +204,7 @@ def build_fii_nifty_overlay(records: list[dict], nifty_prices: Optional[dict[str
         try:
             import pandas as pd
         except ImportError:
-            pass  # skip Nifty overlay
+            log.debug("pandas unavailable — skipping Nifty overlay")
         else:
             dates = pd.to_datetime(list(nifty_prices.keys()), format="%d-%b-%Y")
             prices = list(nifty_prices.values())
