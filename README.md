@@ -22,7 +22,7 @@ Track daily Foreign Institutional Investor (FII) and Domestic Institutional Inve
 1. Open the app → checks SQLite for today's FII/DII snapshot
 2. If missing → fetches from NSE India via `nsepython` (~8.5s)
 3. Data stored locally in SQLite → accumulates over time
-4. Interactive Plotly charts render from stored history
+4. Interactive Altair charts render from stored history
 
 ![Screenshot](https://via.placeholder.com/800x400?text=FII/DII+Dashboard)
 
@@ -47,7 +47,7 @@ Connect your GitHub repo to Streamlit Cloud — no config needed.
 |-----------|--------|-----|
 | Dashboard | Streamlit | Free hosting, Python-native |
 | Storage | SQLite | Zero infra, stdlib, file-based |
-| Charts | Plotly | Interactive, Streamlit-native |
+| Charts | Altair | Zero extra deps - ships with Streamlit |
 | Data source | nsepython | Only working NSE FII/DII API |
 | Nifty prices | yfinance | Reliable, free, no API key |
 
