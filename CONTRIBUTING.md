@@ -1,13 +1,12 @@
 # Contributing to FII/DII Dashboard
 
-Thank you for your interest in contributing! 🎉
+Thank you for your interest in contributing!
 
 ## Setup
 ```bash
 git clone https://github.com/AshayK003/fii-dii-dashboard
 cd fii-dii-dashboard
 pip install -r requirements.txt
-pip install pytest
 ```
 
 ## Running the App
