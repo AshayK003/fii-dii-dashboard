@@ -34,24 +34,27 @@ def get_fiidii_data() -> list[dict]:
     with 2s backoff. Returns empty list on all failures.
     """
     import time
+    import nsepython as nse
+
     for attempt in range(3):
         try:
-            import nsepython as nse
             raw = nse.nse_fiidii()
-            if raw.empty:
-                return []
-            parsed = []
-            for row in raw.to_dict("records"):
-                p = parse_fiidii_row(row)
-                if p:
-                    parsed.append(p)
-            return parsed
         except Exception as exc:
             log.warning("nsepython attempt %d failed: %s", attempt + 1, exc)
             if attempt < 2:
                 time.sleep(2)
                 continue
             return []
+
+        if raw.empty:
+            return []
+
+        parsed = []
+        for row in raw.to_dict("records"):
+            p = parse_fiidii_row(row)
+            if p:
+                parsed.append(p)
+        return parsed
 
 
 def get_nifty_history(start_date: str, end_date: str) -> Optional[dict[str, float]]:
